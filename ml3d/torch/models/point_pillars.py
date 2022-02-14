@@ -295,7 +295,79 @@ class PointPillars(BaseModel):
 
 MODEL._register_module(PointPillars, 'torch')
 
+class PointPillarsVanilla(nn.Module):
+    """Object detection model. Based on the PointPillars architecture
+    https://github.com/nutonomy/second.pytorch.
+    Args:
+        name (string): Name of model.
+            Default to "PointPillars".
+        voxel_size: voxel edge lengths with format [x, y, z].
+        point_cloud_range: The valid range of point coordinates as
+            [x_min, y_min, z_min, x_max, y_max, z_max].
+        voxelize: Config of PointPillarsVoxelization module.
+        voxelize_encoder: Config of PillarFeatureNet module.
+        scatter: Config of PointPillarsScatter module.
+        backbone: Config of backbone module (SECOND).
+        neck: Config of neck module (SECONDFPN).
+        head: Config of anchor head module.
+    """
 
+    def __init__(self,
+                 name="PointPillars",
+                 device="cuda",
+                 point_cloud_range=[0, -40.0, -3, 70.0, 40.0, 1],
+                 voxelize={},
+                 voxel_encoder={},
+                 scatter={}
+                 **kwargs):
+
+        super().__init__(name=name,
+                         point_cloud_range=point_cloud_range,
+                         device=device,
+                         **kwargs)
+        self.point_cloud_range = point_cloud_range 
+        
+        self.voxel_layer = PointPillarsVoxelization(
+            point_cloud_range=point_cloud_range, **voxelize)
+        self.voxel_encoder = PillarFeatureNet(
+            point_cloud_range=point_cloud_range, **voxel_encoder)
+        self.middle_encoder = PointPillarsScatter(**scatter)
+
+        self.device = device
+        self.to(device)
+
+    def extract_feats(self, points):
+        """Extract features from points."""
+        voxels, num_points, coors = self.voxelize(points)
+        voxel_features = self.voxel_encoder(voxels, num_points, coors)
+        batch_size = coors[-1, 0].item() + 1
+        x = self.middle_encoder(voxel_features, coors, batch_size)
+        return x
+
+    @torch.no_grad()
+    def voxelize(self, points):
+        """Apply hard voxelization to points."""
+        voxels, coors, num_points = [], [], []
+        for res in points:
+            res_voxels, res_coors, res_num_points = self.voxel_layer(res)
+            voxels.append(res_voxels)
+            coors.append(res_coors)
+            num_points.append(res_num_points)
+        voxels = torch.cat(voxels, dim=0)
+        num_points = torch.cat(num_points, dim=0)
+        coors_batch = []
+        for i, coor in enumerate(coors):
+            coor_pad = F.pad(coor, (1, 0), mode='constant', value=i)
+            coors_batch.append(coor_pad)
+        coors_batch = torch.cat(coors_batch, dim=0)
+        return voxels, num_points, coors_batch
+
+    def forward(self, inputs):
+        inputs = inputs.point
+        outs = self.extract_feats(inputs)
+        return outs
+
+    
 class PointPillarsVoxelization(torch.nn.Module):
 
     def __init__(self,
