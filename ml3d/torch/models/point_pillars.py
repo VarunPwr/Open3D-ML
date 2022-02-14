@@ -313,18 +313,13 @@ class PointPillarsVanilla(nn.Module):
     """
 
     def __init__(self,
-                 name="PointPillars",
                  device="cuda",
                  point_cloud_range=[0, -40.0, -3, 70.0, 40.0, 1],
                  voxelize={},
                  voxel_encoder={},
-                 scatter={}
-                 **kwargs):
+                 scatter={}):
 
-        super().__init__(name=name,
-                         point_cloud_range=point_cloud_range,
-                         device=device,
-                         **kwargs)
+        super().__init__()
         self.point_cloud_range = point_cloud_range 
         
         self.voxel_layer = PointPillarsVoxelization(
@@ -371,8 +366,8 @@ class PointPillarsVanilla(nn.Module):
 class PointPillarsVoxelization(torch.nn.Module):
 
     def __init__(self,
-                 voxel_size,
-                 point_cloud_range,
+                 voxel_size=(0.16, 0.16, 4),
+                 point_cloud_range=[0, -40.0, -3, 70.0, 40.0, 1],
                  max_num_points=32,
                  max_voxels=[16000, 40000]):
         """Voxelization layer for the PointPillars model.
